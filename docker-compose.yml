@@ -40,8 +40,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-    networks:
-      - dokploy-network
 
   # ───────────────────────────────────────────────────────────────
   # WordPress con plugin AI Website Bridge pre-instalado (bakeado)
@@ -72,18 +70,16 @@ services:
     volumes:
       - wp_data:/var/www/html
     healthcheck:
-      # WordPress considera "vivo" cuando existe wp-includes/version.php
-      # y responde wp core is-installed con código 0.
-      test: ["CMD-SHELL", "test -f /var/www/html/wp-includes/version.php && wp core is-installed --allow-root"]
-      interval: 15s
-      timeout: 10s
+      # Solo verifica que Apache está sirviendo. NO usamos wp core is-installed
+      # porque eso lo hace el wordpress-init container — generaría deadlock
+      # (init depende de wordpress healthy, wordpress healthy depende de init).
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost/wp-login.php"]
+      interval: 10s
+      timeout: 5s
       retries: 12
-      start_period: 60s
-    networks:
-      - dokploy-network
+      start_period: 30s
     labels:
       - "traefik.enable=true"
-      - "traefik.docker.network=dokploy-network"
       - "traefik.http.routers.wp-secure.rule=Host(`${WP_HOST}`)"
       - "traefik.http.routers.wp-secure.entrypoints=websecure"
       - "traefik.http.routers.wp-secure.tls=true"
@@ -107,6 +103,8 @@ services:
     container_name: ai-agent-wordpress-init
     depends_on:
       wordpress:
+        condition: service_started
+      mysql:
         condition: service_healthy
     environment:
       WORDPRESS_DB_HOST:     mysql:3306
@@ -123,8 +121,6 @@ services:
     volumes:
       - wp_data:/var/www/html
     restart: "no"
-    networks:
-      - dokploy-network
 
   # ───────────────────────────────────────────────────────────────
   # AI Orchestrator (TypeScript compilado, sin acceso público)
@@ -168,8 +164,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
-    networks:
-      - dokploy-network
 
   # ───────────────────────────────────────────────────────────────
   # Frontend Dashboard (Next.js standalone, compilado con NEXT_PUBLIC_*)
@@ -195,11 +189,8 @@ services:
       # El rewrite server-side usa esta URL. Es interna (nombre de
       # servicio Docker), no se expone al cliente.
       ORCHESTRATOR_INTERNAL_URL: http://orchestrator:4000
-    networks:
-      - dokploy-network
     labels:
       - "traefik.enable=true"
-      - "traefik.docker.network=dokploy-network"
       - "traefik.http.routers.front-secure.rule=Host(`${FRONT_HOST}`)"
       - "traefik.http.routers.front-secure.entrypoints=websecure"
       - "traefik.http.routers.front-secure.tls=true"
@@ -220,6 +211,6 @@ volumes:
   orchestrator_data:
     name: ai-agent-orchestrator-data
 
-networks:
-  dokploy-network:
-    external: true
+# NOTA: NO declarar networks aquí. Dokploy crea la red default y la conecta
+# a Traefik automáticamente. Si declaramos `external: true`, docker falla
+# con "network not found" o configuración inconsistente.
