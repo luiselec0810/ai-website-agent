@@ -51,7 +51,8 @@ ENV HOSTNAME=0.0.0.0
 # Standalone output includes a server.js plus the minimal node_modules tree.
 COPY --from=build --chown=node:node /build/.next/standalone ./
 COPY --from=build --chown=node:node /build/.next/static ./.next/static
-COPY --from=build --chown=node:node /build/public ./public
+# frontend/public/ may not exist — uncomment if you add static assets.
+# COPY --from=build --chown=node:node /build/public ./public
 
 USER node
 
