@@ -28,8 +28,7 @@ RUN apt-get update \
 # The init script is invoked by the separate wordpress-init service
 # (see docker/Dockerfile.init + docker-compose.yml). We also stash it
 # here for convenience in case someone wants to run it ad-hoc.
-COPY docker/init-wordpress.sh /usr/local/bin/init-wordpress.sh
-RUN chmod +x /usr/local/bin/init-wordpress.sh
+COPY --chmod=755 docker/init-wordpress.sh /usr/local/bin/init-wordpress.sh
 
 # Recommended PHP settings for WP behind a reverse proxy + a few
 # upload-size bumps for Elementor.

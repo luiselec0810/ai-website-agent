@@ -13,8 +13,9 @@ FROM wordpress:cli-php8.3
 
 # The init script is mounted from the build context so changes to it
 # don't require rebuilding the wordpress image.
-COPY docker/init-wordpress.sh /usr/local/bin/init-wordpress.sh
-RUN chmod +x /usr/local/bin/init-wordpress.sh
+# COPY --chmod=755 sets the executable bit at copy time, avoiding
+# `chmod +x` failures when the image's default USER is non-root.
+COPY --chmod=755 docker/init-wordpress.sh /usr/local/bin/init-wordpress.sh
 
 # Run as www-data so file ownership matches what wordpress service writes.
 USER www-data
