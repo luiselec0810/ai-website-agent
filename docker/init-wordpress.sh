@@ -90,6 +90,9 @@ fi
 # Paso 3: esperar a MySQL y verificar conexión
 # ─────────────────────────────────────────────────────────────────
 log "Verificando conexión a MySQL..."
+log "  DB_HOST=${WORDPRESS_DB_HOST:-<unset>} DB_USER=${WORDPRESS_DB_USER:-<unset>} DB_NAME=${WORDPRESS_DB_NAME:-<unset>}"
+log "  wp-config.php DB_HOST=$(grep -oE "DB_HOST.*'[^']*'" wp-config.php | head -1 || echo 'no encontrado')"
+log "  wp-config.php DB_USER=$(grep -oE "DB_USER.*'[^']*'" wp-config.php | head -1 || echo 'no encontrado')"
 for i in $(seq 1 30); do
   if wp db check --allow-root >/dev/null 2>&1; then
     log "Conexión DB OK."
@@ -97,7 +100,10 @@ for i in $(seq 1 30); do
   fi
   if [ "$i" = "30" ]; then
     log "ERROR: no se pudo conectar a MySQL tras 60 s."
-    wp db check --allow-root || true
+    log "Output completo de wp db check:"
+    wp db check --allow-root 2>&1 || true
+    log "Output de wp db query 'SELECT 1':"
+    wp db query 'SELECT 1' --allow-root 2>&1 || true
     exit 1
   fi
   sleep 2
