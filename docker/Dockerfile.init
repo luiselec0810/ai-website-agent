@@ -17,7 +17,11 @@ FROM wordpress:cli-php8.3
 # `chmod +x` failures when the image's default USER is non-root.
 COPY --chmod=755 docker/init-wordpress.sh /usr/local/bin/init-wordpress.sh
 
-# Run as www-data so file ownership matches what wordpress service writes.
-USER www-data
+# Run as root so we can read/write wp-config.php regardless of its current
+# owner. The wordpress entrypoint may not have finished chown'ing files
+# to www-data when init starts, so we need root access.
+# After init runs, we chown files to www-data so the wordpress service
+# (which runs as www-data after its entrypoint) can manage them.
+USER root
 
 ENTRYPOINT ["/usr/local/bin/init-wordpress.sh"]

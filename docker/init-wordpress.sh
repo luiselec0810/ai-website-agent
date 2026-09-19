@@ -3,12 +3,17 @@
 # init-wordpress.sh — v2 (idempotente, Dokploy-safe)
 #
 # Aimed at production behind Traefik:
+#   - Runs as ROOT (see Dockerfile.init) so we can read/write wp-config.php
+#     regardless of its current owner. The wordpress entrypoint may not
+#     have finished chown'ing files to www-data when init starts.
 #   - Never overwrites wp-config.php if it already exists.
 #   - Uses ${WP_URL} (env, from compose) for siteurl/home — corrects
 #     the http://localhost default that wp core install writes.
 #   - API keys are merged (not replaced) — admin-created keys survive
 #     redeploys.
 #   - Every step is guarded with an idempotency check.
+#   - At the end, chowns everything back to www-data so the wordpress
+#     service (running as www-data) can write uploads/etc.
 #
 # Env vars consumed:
 #   WP_URL, WP_TITLE, WP_ADMIN_USER, WP_ADMIN_PASSWORD, WP_ADMIN_EMAIL,
@@ -200,3 +205,8 @@ echo "  Admin:       ${WP_URL_VALUE}/wp-admin"
 echo "  REST:        ${WP_URL_VALUE}/wp-json/ai-agent/v1/"
 echo "  API Key:     $(mask_key "$API_KEY")"
 echo "════════════════════════════════════════════════════════════"
+
+# Chown everything to www-data so the wordpress service (running as www-data
+# after its entrypoint) can manage uploads, plugins, etc.
+chown -R www-data:www-data /var/www/html || log "WARN: chown falló (no crítico)"
+log "Permisos ajustados a www-data:www-data."
