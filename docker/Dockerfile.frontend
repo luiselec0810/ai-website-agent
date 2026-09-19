@@ -1,0 +1,60 @@
+# ─────────────────────────────────────────────────────────────────
+# Frontend Dockerfile — Next.js standalone output
+# Multi-stage build optimized for Dokploy.
+#   - NEXT_PUBLIC_* are passed as build args so they get inlined into
+#     the browser bundle (Next.js freezes them at build time).
+#   - output: 'standalone' is set in next.config.js — only the minimal
+#     server runtime + page chunks are copied into the runtime image.
+# ─────────────────────────────────────────────────────────────────
+
+# ---------- Stage 1: deps ----------
+FROM node:20-alpine AS deps
+WORKDIR /build
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+# ---------- Stage 2: build ----------
+FROM node:20-alpine AS build
+WORKDIR /build
+
+# Pull node_modules from deps stage
+COPY --from=deps /build/node_modules ./node_modules
+
+# Copy frontend source
+COPY frontend/ ./
+
+# Build-time envs (inlined into client bundle by Next.js)
+# IMPORTANT: these MUST come via build.args in docker-compose, not
+# environment: at runtime — changing them after build has no effect.
+ARG NEXT_PUBLIC_ORCHESTRATOR_URL
+ARG NEXT_PUBLIC_LLM_MODEL
+ARG NEXT_PUBLIC_WP_DEFAULT_URL
+ENV NEXT_PUBLIC_ORCHESTRATOR_URL=${NEXT_PUBLIC_ORCHESTRATOR_URL}
+ENV NEXT_PUBLIC_LLM_MODEL=${NEXT_PUBLIC_LLM_MODEL}
+ENV NEXT_PUBLIC_WP_DEFAULT_URL=${NEXT_PUBLIC_WP_DEFAULT_URL}
+
+# Disable telemetry during build
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Generate standalone output
+RUN npm run build
+
+# ---------- Stage 3: runtime ----------
+FROM node:20-alpine AS runtime
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV HOSTNAME=0.0.0.0
+
+# Standalone output includes a server.js plus the minimal node_modules tree.
+COPY --from=build --chown=node:node /build/.next/standalone ./
+COPY --from=build --chown=node:node /build/.next/static ./.next/static
+COPY --from=build --chown=node:node /build/public ./public
+
+USER node
+
+EXPOSE 3000
+
+CMD ["node", "server.js"]

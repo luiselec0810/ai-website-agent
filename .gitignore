@@ -4,8 +4,10 @@
 
 # Environment
 .env
+**/.env
 .env.local
 .env.*.local
+# NOTA: .env.example debe commitearse — por convención, no está ignorado.
 
 # Dependencies
 node_modules/

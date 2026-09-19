@@ -1,0 +1,50 @@
+# ─────────────────────────────────────────────────────────────────
+# Orchestrator Dockerfile — TypeScript compiled with tsc
+# Multi-stage build optimized for Dokploy.
+#   - Stage 1 compiles TS to dist/ (production output).
+#   - Stage 2 carries only the compiled JS + production node_modules.
+#   - Runs as non-root user for security.
+# ─────────────────────────────────────────────────────────────────
+
+# ---------- Stage 1: build ----------
+FROM node:20-alpine AS build
+WORKDIR /build
+
+# better-sqlite3 needs native build tools at install/compile time.
+RUN apk add --no-cache python3 make g++ libc6-compat
+
+# Copy manifests first for layer caching.
+COPY orchestrator/package.json orchestrator/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+# Copy TS source + config and compile.
+COPY orchestrator/tsconfig.json ./
+COPY orchestrator/src ./src
+RUN npx tsc
+
+# Prune devDependencies so the runtime image is smaller.
+RUN npm prune --omit=dev
+
+# ---------- Stage 2: runtime ----------
+FROM node:20-alpine AS runtime
+WORKDIR /app
+
+# Runtime only needs libc6-compat for better-sqlite3's prebuilt binary.
+RUN apk add --no-cache libc6-compat
+
+ENV NODE_ENV=production
+ENV PORT=4000
+
+# Copy compiled output + production node_modules from build stage.
+COPY --from=build --chown=node:node /build/dist ./dist
+COPY --from=build --chown=node:node /build/node_modules ./node_modules
+COPY --from=build --chown=node:node /build/package.json ./package.json
+
+# Persistent data directory for SQLite.
+RUN mkdir -p /data && chown -R node:node /data
+
+USER node
+
+EXPOSE 4000
+
+CMD ["node", "dist/index.js"]

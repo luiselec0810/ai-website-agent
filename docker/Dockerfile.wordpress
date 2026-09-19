@@ -1,0 +1,41 @@
+# ─────────────────────────────────────────────────────────────────
+# WordPress Dockerfile — custom image with AI Website Bridge baked in
+#   - Plugin source is copied at build time (no live volume mount).
+#   - vendor/ is excluded by .dockerignore (plugin ships a fallback
+#     autoloader in ai-website-bridge.php that works without composer).
+#   - WP_SITEURL / WP_HOME / FORCE_SSL_ADMIN injected via
+#     WORDPRESS_CONFIG_EXTRA at runtime (env-driven).
+#   - On first boot, init-wordpress.sh runs (via the wordpress-init
+#     service in compose) and sets up the AI Website Bridge API key,
+#     Elementor, demo pages, etc.
+# ─────────────────────────────────────────────────────────────────
+
+FROM wordpress:6.6-php8.3-apache
+
+# Bake the plugin into /usr/src/wordpress so the official entrypoint
+# copies it into /var/www/html on first container start.
+# NOTE: plugin/vendor/ is excluded by .dockerignore.
+COPY --chown=www-data:www-data ./plugin /usr/src/wordpress/wp-content/plugins/ai-website-bridge
+
+# Install wp-cli (the apache image doesn't include it). Useful both at
+# runtime (for debugging) and during the one-shot init container.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends less mariadb-client \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL -o /usr/local/bin/wp https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar \
+    && chmod +x /usr/local/bin/wp
+
+# The init script is invoked by the separate wordpress-init service
+# (see docker/Dockerfile.init + docker-compose.yml). We also stash it
+# here for convenience in case someone wants to run it ad-hoc.
+COPY docker/init-wordpress.sh /usr/local/bin/init-wordpress.sh
+RUN chmod +x /usr/local/bin/init-wordpress.sh
+
+# Recommended PHP settings for WP behind a reverse proxy + a few
+# upload-size bumps for Elementor.
+RUN { \
+    echo 'upload_max_filesize = 64M'; \
+    echo 'post_max_size = 64M'; \
+    echo 'max_execution_time = 180'; \
+    echo 'memory_limit = 256M'; \
+    } > /usr/local/etc/php/conf.d/ai-website-bridge.ini

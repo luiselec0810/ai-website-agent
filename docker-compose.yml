@@ -1,144 +1,225 @@
-# AI Website Agent - Docker Compose
-# Levanta: WordPress + Elementor + MySQL + Orchestrator + Frontend
+# ─────────────────────────────────────────────────────────────────
+# AI Website Agent — Docker Compose (Dokploy / producción)
 #
-# Uso:
-#   docker-compose up -d
-#   docker-compose logs -f wordpress-init   # esperar a que termine (~30-60s)
-
-version: "3.9"
+# Levanta: WordPress + Elementor + AI Website Bridge (bakeado) +
+# Orchestrator (compilado) + Frontend (Next.js standalone) + MySQL.
+#
+# Diferencias vs docker-compose.dev.yml:
+#   - Plugin bakeado en la imagen wordpress (no volume mount).
+#   - Init container one-shot (docker/Dockerfile.init) corre el script
+#     idempotente docker/init-wordpress.sh.
+#   - Traefik con TLS automático (certresolver letsencrypt) enruta:
+#       ${FRONT_HOST} → frontend:3000
+#       ${WP_HOST}    → wordpress:80
+#   - El Orchestrator NO se expone públicamente. El frontend hace
+#     rewrite /api/* → http://orchestrator:4000/api/* (next.config.js).
+#   - Todos los secretos vienen del panel de Dokploy (env vars).
+#
+# Redes: dokploy-network la crea Dokploy automáticamente al asignar
+# dominio. Si la primera vez falla, créala manualmente desde el panel.
+# ─────────────────────────────────────────────────────────────────
 
 services:
-  # ─────────────────────────────────────────────────────────────────
+  # ───────────────────────────────────────────────────────────────
   # MySQL para WordPress
-  # ─────────────────────────────────────────────────────────────────
+  # ───────────────────────────────────────────────────────────────
   mysql:
-    # 5.7 en lugar de 8.0: MySQL 8 obliga SSL/TLS por defecto, lo que rompe wp-cli
-    # (el cliente intenta SSL y falla con "self-signed certificate").
-    # 5.7 es más permisivo y es la opción probada con WP-CLI en docker-compose.
     image: mysql:5.7
     container_name: ai-agent-mysql
     restart: unless-stopped
     command: --default-authentication-plugin=mysql_native_password
     environment:
-      MYSQL_ROOT_PASSWORD: rootpass
-      MYSQL_DATABASE: wordpress
-      MYSQL_USER: wordpress
-      MYSQL_PASSWORD: wordpress
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE:      ${MYSQL_DATABASE:-wordpress}
+      MYSQL_USER:          ${MYSQL_USER:-wordpress}
+      MYSQL_PASSWORD:      ${MYSQL_PASSWORD}
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpass"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
     networks:
-      - ai-agent-net
+      - dokploy-network
 
-  # ─────────────────────────────────────────────────────────────────
-  # WordPress con plugin AI Website Bridge pre-instalado
-  # ─────────────────────────────────────────────────────────────────
+  # ───────────────────────────────────────────────────────────────
+  # WordPress con plugin AI Website Bridge pre-instalado (bakeado)
+  # ───────────────────────────────────────────────────────────────
   wordpress:
-    image: wordpress:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.wordpress
+    image: ai-website-agent-wordpress:latest
     container_name: ai-agent-wordpress
     restart: unless-stopped
     depends_on:
       mysql:
         condition: service_healthy
-    ports:
-      - "8000:80"
     environment:
-      WORDPRESS_DB_HOST: mysql:3306
-      WORDPRESS_DB_USER: wordpress
-      WORDPRESS_DB_PASSWORD: wordpress
-      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_HOST:     mysql:3306
+      WORDPRESS_DB_USER:     ${MYSQL_USER:-wordpress}
+      WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
+      WORDPRESS_DB_NAME:     ${MYSQL_DATABASE:-wordpress}
+      # Init script consume estas vars (las inyecta también wordpress-init).
+      WP_URL:             https://${WP_HOST}
+      WP_TITLE:           ${WP_TITLE:-AI Agent Demo Site}
+      WP_ADMIN_USER:      ${WP_ADMIN_USER:-admin}
+      WP_ADMIN_PASSWORD:  ${WP_ADMIN_PASSWORD}
+      WP_ADMIN_EMAIL:     ${WP_ADMIN_EMAIL}
+      DEFAULT_WP_API_KEY: ${DEFAULT_WP_API_KEY}
+      WP_URL_VALUE:       https://${WP_HOST}
     volumes:
       - wp_data:/var/www/html
-      # Montamos el plugin en desarrollo
-      - ./plugin:/var/www/html/wp-content/plugins/ai-website-bridge
+    healthcheck:
+      # WordPress considera "vivo" cuando existe wp-includes/version.php
+      # y responde wp core is-installed con código 0.
+      test: ["CMD-SHELL", "test -f /var/www/html/wp-includes/version.php && wp core is-installed --allow-root"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
     networks:
-      - ai-agent-net
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=dokploy-network"
+      - "traefik.http.routers.wp-secure.rule=Host(`${WP_HOST}`)"
+      - "traefik.http.routers.wp-secure.entrypoints=websecure"
+      - "traefik.http.routers.wp-secure.tls=true"
+      - "traefik.http.routers.wp-secure.tls.certresolver=letsencrypt"
+      - "traefik.http.services.wp.loadbalancer.server.port=80"
+      # HTTP → HTTPS redirect
+      - "traefik.http.routers.wp-http.rule=Host(`${WP_HOST}`)"
+      - "traefik.http.routers.wp-http.entrypoints=web"
+      - "traefik.http.routers.wp-http.middlewares=wp-redirect"
+      - "traefik.http.middlewares.wp-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.wp-redirect.redirectscheme.permanent=true"
 
-  # ─────────────────────────────────────────────────────────────────
-  # Init container: instala Elementor + activa plugin + crea API key
-  # ─────────────────────────────────────────────────────────────────
+  # ───────────────────────────────────────────────────────────────
+  # Init container one-shot (idempotente)
+  # ───────────────────────────────────────────────────────────────
   wordpress-init:
-    image: wordpress:cli
-    container_name: ai-agent-wp-init
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.init
+    image: ai-website-agent-wordpress-init:latest
+    container_name: ai-agent-wordpress-init
     depends_on:
       wordpress:
-        condition: service_started
-    # Correr como www-data (uid 33) para tener los mismos permisos
-    # sobre wp-config.php que el contenedor wordpress.
-    user: "33:33"
+        condition: service_healthy
+    environment:
+      WORDPRESS_DB_HOST:     mysql:3306
+      WORDPRESS_DB_USER:     ${MYSQL_USER:-wordpress}
+      WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
+      WORDPRESS_DB_NAME:     ${MYSQL_DATABASE:-wordpress}
+      WP_URL:                https://${WP_HOST}
+      WP_URL_VALUE:          https://${WP_HOST}
+      WP_TITLE:              ${WP_TITLE:-AI Agent Demo Site}
+      WP_ADMIN_USER:         ${WP_ADMIN_USER:-admin}
+      WP_ADMIN_PASSWORD:     ${WP_ADMIN_PASSWORD}
+      WP_ADMIN_EMAIL:        ${WP_ADMIN_EMAIL}
+      DEFAULT_WP_API_KEY:    ${DEFAULT_WP_API_KEY}
     volumes:
       - wp_data:/var/www/html
-      - ./plugin:/var/www/html/wp-content/plugins/ai-website-bridge
-      - ./scripts:/scripts
-    entrypoint: /bin/bash
-    command:
-      - /scripts/init-wordpress.sh
-    networks:
-      - ai-agent-net
     restart: "no"
+    networks:
+      - dokploy-network
 
-  # ─────────────────────────────────────────────────────────────────
-  # AI Orchestrator (TypeScript)
-  # ─────────────────────────────────────────────────────────────────
+  # ───────────────────────────────────────────────────────────────
+  # AI Orchestrator (TypeScript compilado, sin acceso público)
+  # ───────────────────────────────────────────────────────────────
   orchestrator:
     build:
-      context: ./orchestrator
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: docker/Dockerfile.orchestrator
+    image: ai-website-agent-orchestrator:latest
     container_name: ai-agent-orchestrator
     restart: unless-stopped
     depends_on:
       wordpress-init:
         condition: service_completed_successfully
-    ports:
-      - "4000:4000"
     environment:
-      NODE_ENV: development
-      PORT: 4000
-      # El proveedor LLM se elige en .env (sin default)
-      LLM_PROVIDER: ${LLM_PROVIDER}
-      LLM_MODEL: ${LLM_MODEL}
+      NODE_ENV:      production
+      PORT:          4000
+      LOG_LEVEL:     ${LOG_LEVEL:-info}
+      # LLM provider (sin default — Dokploy debe setear al menos uno)
+      LLM_PROVIDER:      ${LLM_PROVIDER}
+      LLM_MODEL:         ${LLM_MODEL}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      MINIMAX_BASE_URL: ${MINIMAX_BASE_URL:-https://api.minimax.io/v1}
-      MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
-      DEFAULT_WP_URL: http://wordpress
+      OPENAI_API_KEY:    ${OPENAI_API_KEY:-}
+      OLLAMA_BASE_URL:   ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      MINIMAX_BASE_URL:  ${MINIMAX_BASE_URL:-}
+      MINIMAX_API_KEY:   ${MINIMAX_API_KEY:-}
+      GEMINI_BASE_URL:   ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
+      GEMINI_API_KEY:    ${GEMINI_API_KEY:-}
+      # Conexión al sitio WP por defecto (HTTPS público)
+      DEFAULT_WP_URL:    https://${WP_HOST}
       DEFAULT_WP_API_KEY: ${DEFAULT_WP_API_KEY}
-      DATABASE_PATH: /data/orchestrator.db
+      DATABASE_PATH:     /data/orchestrator.db
+      CORS_ORIGINS:      https://${FRONT_HOST}
+      # Secreto para firmar tokens de agente (32 bytes base64)
+      ORCHESTRATOR_MASTER_KEY: ${ORCHESTRATOR_MASTER_KEY}
     volumes:
       - orchestrator_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     networks:
-      - ai-agent-net
+      - dokploy-network
 
-  # ─────────────────────────────────────────────────────────────────
-  # Frontend Dashboard (Next.js)
-  # ─────────────────────────────────────────────────────────────────
+  # ───────────────────────────────────────────────────────────────
+  # Frontend Dashboard (Next.js standalone, compilado con NEXT_PUBLIC_*)
+  # ───────────────────────────────────────────────────────────────
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+      args:
+        # CRÍTICO: estas vars se inlinean en el bundle del browser en
+        # build time. Cambiarlas en Dokploy sin rebuild NO surte efecto.
+        NEXT_PUBLIC_ORCHESTRATOR_URL: https://${FRONT_HOST}
+        NEXT_PUBLIC_LLM_MODEL:        ${LLM_MODEL}
+        NEXT_PUBLIC_WP_DEFAULT_URL:   https://${WP_HOST}
+    image: ai-website-agent-frontend:latest
     container_name: ai-agent-frontend
     restart: unless-stopped
     depends_on:
-      - orchestrator
-    ports:
-      - "3000:3000"
+      orchestrator:
+        condition: service_healthy
     environment:
-      NODE_ENV: development
-      NEXT_PUBLIC_ORCHESTRATOR_URL: http://localhost:4000
+      NODE_ENV:                production
+      # El rewrite server-side usa esta URL. Es interna (nombre de
+      # servicio Docker), no se expone al cliente.
       ORCHESTRATOR_INTERNAL_URL: http://orchestrator:4000
     networks:
-      - ai-agent-net
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=dokploy-network"
+      - "traefik.http.routers.front-secure.rule=Host(`${FRONT_HOST}`)"
+      - "traefik.http.routers.front-secure.entrypoints=websecure"
+      - "traefik.http.routers.front-secure.tls=true"
+      - "traefik.http.routers.front-secure.tls.certresolver=letsencrypt"
+      - "traefik.http.services.front.loadbalancer.server.port=3000"
+      # HTTP → HTTPS redirect
+      - "traefik.http.routers.front-http.rule=Host(`${FRONT_HOST}`)"
+      - "traefik.http.routers.front-http.entrypoints=web"
+      - "traefik.http.routers.front-http.middlewares=front-redirect"
+      - "traefik.http.middlewares.front-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.front-redirect.redirectscheme.permanent=true"
 
 volumes:
   mysql_data:
+    name: ai-agent-mysql-data
   wp_data:
+    name: ai-agent-wp-data
   orchestrator_data:
+    name: ai-agent-orchestrator-data
 
 networks:
-  ai-agent-net:
-    driver: bridge
+  dokploy-network:
+    external: true

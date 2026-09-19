@@ -1,0 +1,22 @@
+# ─────────────────────────────────────────────────────────────────
+# WordPress init container — one-shot setup
+#   - Built on wordpress:cli (includes wp-cli, no Apache).
+#   - Shares the wp_data volume with the wordpress service.
+#   - Runs /usr/local/bin/init-wordpress.sh which is fully idempotent
+#     (safe to re-run on every redeploy).
+#   - restart: "no" in compose; the orchestrator service depends on
+#     service_completed_successfully so it only starts once init
+#     finishes cleanly.
+# ─────────────────────────────────────────────────────────────────
+
+FROM wordpress:cli-php8.3
+
+# The init script is mounted from the build context so changes to it
+# don't require rebuilding the wordpress image.
+COPY docker/init-wordpress.sh /usr/local/bin/init-wordpress.sh
+RUN chmod +x /usr/local/bin/init-wordpress.sh
+
+# Run as www-data so file ownership matches what wordpress service writes.
+USER www-data
+
+ENTRYPOINT ["/usr/local/bin/init-wordpress.sh"]

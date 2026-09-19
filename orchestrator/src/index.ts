@@ -78,6 +78,8 @@ getDb();
 serve({
   fetch: app.fetch,
   port: config.PORT,
+  hostname: '0.0.0.0',  // explícito: antes dependía del default de Node.
+                          // Hono/node-server v1.13+ acepta este parámetro.
 }, (info) => {
   logger.info({ port: info.port, llm: config.LLM_PROVIDER }, '🚀 AI Orchestrator started');
 });
