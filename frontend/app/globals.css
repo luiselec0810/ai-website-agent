@@ -1,0 +1,154 @@
+/* ============================================================
+   AI Website Agent — Global stylesheet
+   ============================================================
+   - Imports Inter from Google Fonts (system fallback in tailwind.config).
+   - Defines CSS custom properties mirroring the Tailwind tokens so
+     that JS / non-Tailwind consumers (e.g. inline styles, charts)
+     can reach the same palette.
+   - Applies a tiny reset and base defaults on body / form controls.
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------------------------------------
+   Design tokens — single source of truth (mirror of
+   tailwind.config.ts). Update both when changing values.
+   ------------------------------------------------------------ */
+:root {
+  /* Surfaces */
+  --surface: #F9F9FB;
+  --panel: #FFFFFF;
+  --panel-border: #E4E4E7;
+
+  /* Accent */
+  --accent: #7C3AED;
+  --accent-soft: #EDE9FE;
+  --accent-muted: #A78BFA;
+  --accent-ring: #C4B5FD;
+
+  /* Feedback */
+  --success: #10B981;
+  --success-soft: #D1FAE5;
+  --danger: #EF4444;
+  --danger-soft: #FEE2E2;
+  --warning: #F59E0B;
+  --warning-soft: #FEF3C7;
+
+  /* Text */
+  --text: #18181B;
+  --text-muted: #71717A;
+  --text-faint: #A1A1AA;
+  --text-inverse: #FAFAFA;
+
+  /* Misc */
+  --divider: #E4E4E7;
+  --radius-card: 0.875rem;
+  --radius-bubble: 1.125rem;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-popover: 0 4px 24px rgb(0 0 0 / 0.08);
+}
+
+/* ------------------------------------------------------------
+   Reset
+   ------------------------------------------------------------ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* ------------------------------------------------------------
+   Base body defaults
+   ------------------------------------------------------------ */
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--text);
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', Roboto, sans-serif;
+  font-size: 0.875rem; /* 14px */
+  line-height: 1.5;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+/* ------------------------------------------------------------
+   Form elements inherit the right font and tone
+   ------------------------------------------------------------ */
+input,
+textarea,
+button,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ------------------------------------------------------------
+   Focus ring — violet, soft, accessible
+   ------------------------------------------------------------ */
+:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+
+/* ------------------------------------------------------------
+   Scrollbars — slim, light
+   ------------------------------------------------------------ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--text-faint) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--text-faint);
+  border-radius: 9999px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ------------------------------------------------------------
+   Indeterminate loading bar (used by ThinkingPanel / Chat)
+   ------------------------------------------------------------ */
+@keyframes loading-bar {
+  0%   { transform: translateX(-100%); }
+  50%  { transform: translateX(200%); }
+  100% { transform: translateX(400%); }
+}
+.animate-\[loading_1\.5s_ease-in-out_infinite\] {
+  animation: loading-bar 1.5s ease-in-out infinite;
+}

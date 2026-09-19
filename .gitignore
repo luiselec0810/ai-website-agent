@@ -1,0 +1,78 @@
+# ─────────────────────────────────────────────────────────────────
+# AI Website Agent - .gitignore
+# ─────────────────────────────────────────────────────────────────
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+**/node_modules/
+vendor/
+
+# Build artifacts
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Tests / coverage
+coverage/
+.nyc_output/
+*.lcov
+playwright-report/
+test-results/
+
+# Docker volumes data (managed by docker-compose)
+**/mysql_data/
+**/wp_data/
+**/orchestrator_data/
+
+# Database files
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite3-journal
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Composer
+composer.lock
+
+# Misc
+.cache/
+.parcel-cache/
+.eslintcache
+
+# Plugin build artifacts (regenerable con `make build`)
+ai-website-bridge.zip
+# Sample/demo media en `public/` de Next.js — los assets reales viven en WordPress
+# media library, no en el repo. Si necesitás un video legítimo en `public/`,
+# ponelo en otro subdir (ej: `public/product/`) y excluilo de este patrón.
+public/*.mp4
+public/*.mov
+public/*.webm
+# Artefacto de copy accidental en Windows (concatenación de comandos: `cp a b;C`).
+# El `;` es un separador de comandos en cmd.exe, así que se crea un dir vacío llamado `plugin;C`.
+plugin;C/
+plugin;C

@@ -1,0 +1,156 @@
+{
+  "$schema": "https://design-tokens.org/schema.json",
+  "name": "AI Website Agent — Design Tokens",
+  "version": "1.0.0",
+  "description": "Single source of truth for visual tokens. Mirror this file in tailwind.config.ts and app/globals.css when changing values.",
+  "color": {
+    "surface": {
+      "value": "#F9F9FB",
+      "description": "App-wide background. Off-white, almost neutral. Avoid pure #FFFFFF at the root — it produces harsh contrast on long pages."
+    },
+    "panel": {
+      "value": "#FFFFFF",
+      "description": "Cards, popovers, side panels. Sits on top of `surface`."
+    },
+    "panelBorder": {
+      "value": "#E4E4E7",
+      "description": "zinc-200. Hairline divider between panels and inside cards."
+    },
+    "accent": {
+      "value": "#7C3AED",
+      "description": "violet-600. Primary CTA, active nav, focus rings. Chosen over #6366F1 (indigo) for warmer, more AI-product feel."
+    },
+    "accentSoft": {
+      "value": "#EDE9FE",
+      "description": "violet-100. Soft backgrounds for selected nav items, hover states, badges."
+    },
+    "accentMuted": {
+      "value": "#A78BFA",
+      "description": "violet-400. Text/icons on accent-soft backgrounds."
+    },
+    "accentRing": {
+      "value": "#C4B5FD",
+      "description": "violet-300. Focus ring outline."
+    },
+    "success": {
+      "value": "#10B981",
+      "description": "emerald-500. Status badges, checkmarks."
+    },
+    "successSoft": {
+      "value": "#D1FAE5",
+      "description": "emerald-100. Background for success chips."
+    },
+    "danger": {
+      "value": "#EF4444",
+      "description": "red-500. Destructive actions, errors."
+    },
+    "dangerSoft": {
+      "value": "#FEE2E2",
+      "description": "red-100. Error backgrounds."
+    },
+    "warning": {
+      "value": "#F59E0B",
+      "description": "amber-500."
+    },
+    "warningSoft": {
+      "value": "#FEF3C7",
+      "description": "amber-100."
+    },
+    "text": {
+      "value": "#18181B",
+      "description": "zinc-900. Primary copy."
+    },
+    "textMuted": {
+      "value": "#71717A",
+      "description": "zinc-500. Secondary copy, descriptions."
+    },
+    "textFaint": {
+      "value": "#A1A1AA",
+      "description": "zinc-400. Timestamps, placeholder text, dividers."
+    },
+    "textInverse": {
+      "value": "#FAFAFA",
+      "description": "Text on dark surfaces only."
+    }
+  },
+  "radius": {
+    "card": {
+      "value": "0.875rem",
+      "description": "14px. Default for new cards. Slightly softer than Tailwind's `rounded-xl` (12px) so big cards don't feel square."
+    },
+    "bubble": {
+      "value": "1.125rem",
+      "description": "18px. Chat message bubbles."
+    },
+    "pill": {
+      "value": "9999px",
+      "description": "Full round for chips, avatars, status dots."
+    }
+  },
+  "spacing": {
+    "card": {
+      "value": "1.25rem",
+      "description": "20px. Default inner padding for cards."
+    },
+    "gutter": {
+      "value": "1.5rem",
+      "description": "24px. Default inner padding for larger panels."
+    },
+    "section": {
+      "value": "2rem",
+      "description": "32px. Vertical rhythm between major sections."
+    }
+  },
+  "fontFamily": {
+    "sans": {
+      "value": "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    },
+    "mono": {
+      "value": "'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace"
+    }
+  },
+  "fontSize": {
+    "xs": { "value": "0.75rem", "lineHeight": "1rem", "description": "12px — meta, timestamps" },
+    "sm": { "value": "0.8125rem", "lineHeight": "1.125rem", "description": "13px — secondary copy, badges" },
+    "base": { "value": "0.875rem", "lineHeight": "1.5", "description": "14px — body default" },
+    "md": { "value": "0.9375rem", "lineHeight": "1.5", "description": "15px — slightly larger body" },
+    "lg": { "value": "1.0625rem", "lineHeight": "1.5", "description": "17px — sub-headings" },
+    "xl": { "value": "1.25rem", "lineHeight": "1.4", "description": "20px — card titles" },
+    "2xl": { "value": "1.5rem", "lineHeight": "1.3", "description": "24px — page titles" }
+  },
+  "shadow": {
+    "card": {
+      "value": "0 1px 2px rgb(0 0 0 / 0.04)",
+      "description": "Hairline elevation for cards. Almost flat."
+    },
+    "cardHover": {
+      "value": "0 2px 8px rgb(0 0 0 / 0.06)",
+      "description": "Slightly deeper on hover."
+    },
+    "popover": {
+      "value": "0 4px 24px rgb(0 0 0 / 0.08)",
+      "description": "Floating menus, modals. Never go beyond this — anything heavier feels MUI-default and dated."
+    },
+    "focus": {
+      "value": "0 0 0 3px rgb(124 58 237 / 0.18)",
+      "description": "Violet focus ring for accessibility."
+    }
+  },
+  "motion": {
+    "duration": {
+      "fast": "120ms",
+      "default": "200ms",
+      "slow": "300ms"
+    },
+    "easing": {
+      "default": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "outSoft": "cubic-bezier(0.16, 1, 0.3, 1)"
+    }
+  },
+  "aliases": {
+    "description": "Legacy class names still present in the codebase, kept as aliases during the migration. Do NOT use in new code.",
+    "bg": "Tailwind `bg-bg` now resolves to surface (#F9F9FB).",
+    "border": "Tailwind `border-border` now resolves to panelBorder (#E4E4E7).",
+    "muted": "Tailwind `text-muted` now resolves to textMuted (#71717A)."
+  }
+}

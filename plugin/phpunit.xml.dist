@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/9.6/phpunit.xsd"
+    bootstrap="tests/bootstrap.php"
+    backupGlobals="false"
+    colors="true"
+    convertErrorsToExceptions="true"
+    convertNoticesToExceptions="true"
+    convertWarningsToExceptions="true"
+    beStrictAboutTestsThatDoNotTestAnything="false"
+    cacheResultFile=".phpunit.result.cache"
+>
+    <testsuites>
+        <testsuite name="ai-website-bridge">
+            <directory suffix="Test.php">./tests/unit/</directory>
+            <exclude>./tests/unit/fixtures/</exclude>
+        </testsuite>
+    </testsuites>
+    <coverage processUncoveredFiles="true">
+        <include>
+            <directory suffix=".php">./includes/</directory>
+            <file>./ai-website-bridge.php</file>
+        </include>
+        <exclude>
+            <directory>./includes/admin-panel/</directory>
+            <directory>./vendor/</directory>
+        </exclude>
+        <report>
+            <text outputFile="php://stdout" showOnlySummary="true"/>
+            <html outputDirectory="build/coverage" lowUpperBound="50" highLowerBound="80"/>
+        </report>
+    </coverage>
+    <php>
+        <const name="WP_TESTS_PHPUNIT_POLYFILLS_PATH" value="vendor/yoast/phpunit-polyfills/"/>
+        <env name="WP_TESTS_DIR" value="vendor/wp-phpunit/wp-phpunit/"/>
+        <!-- Por defecto, los tests se conectan a una DB de tests: 'wordpress_test'. -->
+        <!-- Override con env vars: WP_TESTS_DB_NAME, WP_TESTS_DB_USER, WP_TESTS_DB_PASSWORD, WP_TESTS_DB_HOST -->
+        <env name="WP_TESTS_TABLE_PREFIX" value="wp_"/>
+    </php>
+</phpunit>

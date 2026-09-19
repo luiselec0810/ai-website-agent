@@ -1,0 +1,144 @@
+# AI Website Agent - Docker Compose
+# Levanta: WordPress + Elementor + MySQL + Orchestrator + Frontend
+#
+# Uso:
+#   docker-compose up -d
+#   docker-compose logs -f wordpress-init   # esperar a que termine (~30-60s)
+
+version: "3.9"
+
+services:
+  # ─────────────────────────────────────────────────────────────────
+  # MySQL para WordPress
+  # ─────────────────────────────────────────────────────────────────
+  mysql:
+    # 5.7 en lugar de 8.0: MySQL 8 obliga SSL/TLS por defecto, lo que rompe wp-cli
+    # (el cliente intenta SSL y falla con "self-signed certificate").
+    # 5.7 es más permisivo y es la opción probada con WP-CLI en docker-compose.
+    image: mysql:5.7
+    container_name: ai-agent-mysql
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wordpress
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpass"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ai-agent-net
+
+  # ─────────────────────────────────────────────────────────────────
+  # WordPress con plugin AI Website Bridge pre-instalado
+  # ─────────────────────────────────────────────────────────────────
+  wordpress:
+    image: wordpress:latest
+    container_name: ai-agent-wordpress
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "8000:80"
+    environment:
+      WORDPRESS_DB_HOST: mysql:3306
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+    volumes:
+      - wp_data:/var/www/html
+      # Montamos el plugin en desarrollo
+      - ./plugin:/var/www/html/wp-content/plugins/ai-website-bridge
+    networks:
+      - ai-agent-net
+
+  # ─────────────────────────────────────────────────────────────────
+  # Init container: instala Elementor + activa plugin + crea API key
+  # ─────────────────────────────────────────────────────────────────
+  wordpress-init:
+    image: wordpress:cli
+    container_name: ai-agent-wp-init
+    depends_on:
+      wordpress:
+        condition: service_started
+    # Correr como www-data (uid 33) para tener los mismos permisos
+    # sobre wp-config.php que el contenedor wordpress.
+    user: "33:33"
+    volumes:
+      - wp_data:/var/www/html
+      - ./plugin:/var/www/html/wp-content/plugins/ai-website-bridge
+      - ./scripts:/scripts
+    entrypoint: /bin/bash
+    command:
+      - /scripts/init-wordpress.sh
+    networks:
+      - ai-agent-net
+    restart: "no"
+
+  # ─────────────────────────────────────────────────────────────────
+  # AI Orchestrator (TypeScript)
+  # ─────────────────────────────────────────────────────────────────
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    container_name: ai-agent-orchestrator
+    restart: unless-stopped
+    depends_on:
+      wordpress-init:
+        condition: service_completed_successfully
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      # El proveedor LLM se elige en .env (sin default)
+      LLM_PROVIDER: ${LLM_PROVIDER}
+      LLM_MODEL: ${LLM_MODEL}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      MINIMAX_BASE_URL: ${MINIMAX_BASE_URL:-https://api.minimax.io/v1}
+      MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
+      DEFAULT_WP_URL: http://wordpress
+      DEFAULT_WP_API_KEY: ${DEFAULT_WP_API_KEY}
+      DATABASE_PATH: /data/orchestrator.db
+    volumes:
+      - orchestrator_data:/data
+    networks:
+      - ai-agent-net
+
+  # ─────────────────────────────────────────────────────────────────
+  # Frontend Dashboard (Next.js)
+  # ─────────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ai-agent-frontend
+    restart: unless-stopped
+    depends_on:
+      - orchestrator
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_ORCHESTRATOR_URL: http://localhost:4000
+      ORCHESTRATOR_INTERNAL_URL: http://orchestrator:4000
+    networks:
+      - ai-agent-net
+
+volumes:
+  mysql_data:
+  wp_data:
+  orchestrator_data:
+
+networks:
+  ai-agent-net:
+    driver: bridge

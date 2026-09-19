@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<!--
+  ============================================================================
+  AI Website Agent — Streaming preview (UX mockup, no backend involved)
+  ============================================================================
+  This is a UX PREVIEW ONLY. No actual streaming happens. The backend would
+  emit Server-Sent Events (EventSource / SSE) per operation; here they are
+  emulated with setTimeout() in the browser so the user can SEE how the
+  "Approve and execute" flow would feel once SSE is wired in.
+
+  Stack: plain HTML + vanilla JS + Tailwind via CDN. No build step.
+  Open with file:// — works offline once Tailwind CDN loads.
+  ============================================================================
+-->
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Website Agent — Streaming preview</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    /* Mirror frontend/tailwind.config.ts so the preview uses the same tokens. */
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            bg: '#0f172a',
+            panel: '#1e293b',
+            border: '#334155',
+            text: '#e2e8f0',
+            muted: '#94a3b8',
+            accent: '#f97316',
+            success: '#22c55e',
+            danger: '#ef4444',
+          },
+          fontFamily: {
+            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    html, body { background-color: #0f172a; color: #e2e8f0; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+
+    /* Live SSE event fade-in animation */
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .event-row { animation: fadeSlideIn 220ms ease-out; }
+
+    /* Running spinner */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { animation: spin 0.9s linear infinite; }
+
+    /* Subtle pulse for running state */
+    @keyframes pulseRing {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.45); }
+      50%      { box-shadow: 0 0 0 6px rgba(234, 179, 8, 0); }
+    }
+    .pulse-running { animation: pulseRing 1.4s ease-in-out infinite; }
+
+    /* JSON pre block: tidy scroll on overflow */
+    pre.arg-json { white-space: pre-wrap; word-break: break-word; }
+
+    /* Tooltip bubble */
+    [data-tip] { position: relative; }
+    [data-tip]:hover > .tip,
+    [data-tip]:focus > .tip { opacity: 1; transform: translateY(0); pointer-events: auto; }
+    .tip {
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translate(-50%, 4px);
+      background: #0b1220;
+      color: #e2e8f0;
+      border: 1px solid #334155;
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 11px;
+      line-height: 1.35;
+      width: max-content;
+      max-width: 240px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 140ms ease, transform 140ms ease;
+      z-index: 30;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+    }
+    .tip::after {
+      content: "";
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: #334155;
+    }
+
+    /* Focus ring for keyboard accessibility */
+    button:focus-visible {
+      outline: 2px solid #fb923c;
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+<body class="min-h-screen">
+  <main class="max-w-5xl mx-auto px-4 py-8 sm:py-12">
+
+    <!-- ===================== HEADER ===================== -->
+    <header class="mb-8">
+      <div class="flex items-center gap-2 text-xs uppercase tracking-wider text-accent font-mono mb-2">
+        <span aria-hidden="true">&#9679;</span> UX preview &middot; mockup
+      </div>
+      <h1 class="text-2xl sm:text-3xl font-bold text-white mb-2">
+        Streaming preview &mdash; cambio <span class="text-accent">"Crear p&aacute;gina Jaguar 2 con Plantilla1 e imagen/video"</span>
+      </h1>
+      <p class="text-muted text-sm sm:text-base max-w-3xl">
+        El backend emitir&aacute; eventos por operaci&oacute;n (SSE). Abajo ves c&oacute;mo se ver&iacute;a
+        la tarjeta <code class="text-accent font-mono">ChangePlanView</code> con badges en tiempo real:
+        <span class="text-yellow-400">ejecutando&#8230;</span>,
+        <span class="text-green-400">&check; ok</span>,
+        <span class="text-red-400">&cross; fail</span>,
+        <span class="text-slate-300">skipped</span>. Pulsa los botones de abajo para simular.
+      </p>
+    </header>
+
+    <!-- ===================== OUTSIDE CONTROL BUTTONS ===================== -->
+    <section aria-label="Controles de simulaci&oacute;n" class="mb-6 flex flex-wrap gap-3">
+      <button
+        id="btn-success"
+        type="button"
+        class="flex items-center gap-2 bg-success/15 text-success border border-success/40 px-4 py-2 rounded-lg hover:bg-success/25 transition text-sm font-medium"
+        aria-label="Simular ejecuci&oacute;n exitosa de las 4 operaciones"
+      >
+        <span aria-hidden="true">&#9654;</span> Simular ejecuci&oacute;n exitosa
+      </button>
+      <button
+        id="btn-fail"
+        type="button"
+        class="flex items-center gap-2 bg-yellow-500/15 text-yellow-300 border border-yellow-500/40 px-4 py-2 rounded-lg hover:bg-yellow-500/25 transition text-sm font-medium"
+        aria-label="Simular fallo parcial: 2 ops OK, op 3 falla, op 4 se salta"
+      >
+        <span aria-hidden="true">&#9888;</span> Simular fallo parcial
+      </button>
+      <button
+        id="btn-reset"
+        type="button"
+        class="flex items-center gap-2 bg-panel text-muted border border-border px-4 py-2 rounded-lg hover:bg-border/60 transition text-sm font-medium"
+        aria-label="Resetear el plan a estado inicial"
+      >
+        <span aria-hidden="true">&#8634;</span> Reset
+      </button>
+    </section>
+
+    <!-- ===================== CHANGE PLAN CARD ===================== -->
+    <section
+      aria-label="Plan de cambio"
+      class="bg-panel border border-border rounded-xl overflow-hidden shadow-lg"
+    >
+      <!-- Card header -->
+      <div class="flex items-start justify-between gap-4 px-5 py-4 border-b border-border">
+        <div>
+          <h2 class="font-semibold text-white text-lg flex items-center gap-2">
+            <span aria-hidden="true">&#128203;</span>
+            Crear p&aacute;gina &ldquo;Jaguar 2&rdquo; con Plantilla1 + imagen y video
+          </h2>
+          <p class="text-sm text-muted mt-1">
+            Crea la p&aacute;gina, aplica la plantilla, reemplaza la imagen destacada y a&ntilde;ade el widget de video.
+          </p>
+          <div id="progress-line" class="mt-2 text-xs text-muted font-mono">
+            Progress: 0/4 ops completed
+          </div>
+        </div>
+        <div>
+          <span
+            id="plan-status-badge"
+            class="text-xs px-2.5 py-1 rounded-full bg-slate-700 text-slate-300 font-medium whitespace-nowrap"
+          >
+            Pendiente de aprobaci&oacute;n
+          </span>
+        </div>
+      </div>
+
+      <!-- Operation list -->
+      <ol id="ops-list" class="px-5 py-4 space-y-2" aria-label="Operaciones del plan">
+        <!-- op 1: create_page -->
+        <li class="op-item bg-bg rounded-lg p-3 text-sm" data-op-index="0">
+          <div class="flex items-start gap-2">
+            <span class="text-accent font-mono text-xs mt-0.5">1.</span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <code class="text-accent font-mono text-sm">create_page</code>
+                <span
+                  class="status-badge text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-300 font-medium"
+                  data-tip
+                  tabindex="0"
+                  aria-label="Estado: pendiente. Toca para m&aacute;s info."
+                >
+                  pending
+                  <span class="tip">pending = la operaci&oacute;n a&uacute;n no se ha enviado al backend.</span>
+                </span>
+                <span
+                  class="op-elapsed text-xs text-muted font-mono hidden"
+                  aria-label="Tiempo transcurrido"
+                >0.0s</span>
+              </div>
+              <pre class="arg-json mt-2 text-xs text-muted font-mono bg-slate-900/40 border border-border/50 rounded p-2">{
+  "title": "Jaguar 2",
+  "slug": "jaguar-2",
+  "status": "draft",
+  "template": "Plantilla1"
+}</pre>
+              <p class="op-error text-xs text-red-400 mt-1 hidden"></p>
+            </div>
+          </div>
+        </li>
+
+        <!-- op 2: use_template -->
+        <li class="op-item bg-bg rounded-lg p-3 text-sm" data-op-index="1">
+          <div class="flex items-start gap-2">
+            <span class="text-accent font-mono text-xs mt-0.5">2.</span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <code class="text-accent font-mono text-sm">use_template</code>
+                <span
+                  class="status-badge text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-300 font-medium"
+                  data-tip
+                  tabindex="0"
+                >
+                  pending
+                  <span class="tip">pending = la operaci&oacute;n a&uacute;n no se ha enviado al backend.</span>
+                </span>
+                <span class="op-elapsed text-xs text-muted font-mono hidden">0.0s</span>
+              </div>
+              <pre class="arg-json mt-2 text-xs text-muted font-mono bg-slate-900/40 border border-border/50 rounded p-2">{
+  "page_id": 482,
+  "template": "Plantilla1",
+  "apply_to_existing_widgets": true
+}</pre>
+              <p class="op-error text-xs text-red-400 mt-1 hidden"></p>
+            </div>
+          </div>
+        </li>
+
+        <!-- op 3: replace_image -->
+        <li class="op-item bg-bg rounded-lg p-3 text-sm" data-op-index="2">
+          <div class="flex items-start gap-2">
+            <span class="text-accent font-mono text-xs mt-0.5">3.</span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <code class="text-accent font-mono text-sm">replace_image</code>
+                <span
+                  class="status-badge text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-300 font-medium"
+                  data-tip
+                  tabindex="0"
+                >
+                  pending
+                  <span class="tip">pending = la operaci&oacute;n a&uacute;n no se ha enviado al backend.</span>
+                </span>
+                <span class="op-elapsed text-xs text-muted font-mono hidden">0.0s</span>
+              </div>
+              <pre class="arg-json mt-2 text-xs text-muted font-mono bg-slate-900/40 border border-border/50 rounded p-2">{
+  "page_id": 482,
+  "element_id": "7a94c7f",
+  "media_id": 129,
+  "alt_text": "Hamburguesa Jaguar a la parrilla"
+}</pre>
+              <p class="op-error text-xs text-red-400 mt-1 hidden"></p>
+            </div>
+          </div>
+        </li>
+
+        <!-- op 4: update_widget (video) -->
+        <li class="op-item bg-bg rounded-lg p-3 text-sm" data-op-index="3">
+          <div class="flex items-start gap-2">
+            <span class="text-accent font-mono text-xs mt-0.5">4.</span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <code class="text-accent font-mono text-sm">update_widget</code>
+                <span
+                  class="status-badge text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-300 font-medium"
+                  data-tip
+                  tabindex="0"
+                >
+                  pending
+                  <span class="tip">pending = la operaci&oacute;n a&uacute;n no se ha enviado al backend.</span>
+                </span>
+                <span class="op-elapsed text-xs text-muted font-mono hidden">0.0s</span>
+              </div>
+              <pre class="arg-json mt-2 text-xs text-muted font-mono bg-slate-900/40 border border-border/50 rounded p-2">{
+  "page_id": 482,
+  "element_id": "ab12cd3",
+  "widget_type": "video",
+  "settings": {
+    "video_type": "hosted",
+    "hosted_url": "https://cdn.jaguar.com/promo-jaguar-2.mp4",
+    "autoplay": false,
+    "loop": true
+  }
+}</pre>
+              <p class="op-error text-xs text-red-400 mt-1 hidden"></p>
+            </div>
+          </div>
+        </li>
+      </ol>
+
+      <!-- Card actions -->
+      <div class="px-5 pb-5 pt-2 flex flex-wrap gap-2 border-t border-border">
+        <button
+          id="btn-approve"
+          type="button"
+          class="flex-1 min-w-[180px] bg-success text-white px-4 py-2 rounded-lg hover:bg-green-600 transition flex items-center justify-center gap-2 font-medium"
+          aria-label="Aprobar y ejecutar todas las operaciones del plan"
+        >
+          <span aria-hidden="true">&#9654;</span> Aprobar y ejecutar todo
+        </button>
+        <button
+          id="btn-execute-all"
+          type="button"
+          class="bg-accent text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition flex items-center gap-2 font-medium"
+          aria-label="Ejecutar todas las operaciones pendientes una a una"
+        >
+          <span aria-hidden="true">&#9654;</span> Ejecutar todas
+        </button>
+        <button
+          id="btn-reject"
+          type="button"
+          class="bg-danger text-white px-4 py-2 rounded-lg hover:bg-red-600 transition flex items-center gap-2 font-medium"
+          aria-label="Rechazar el plan"
+        >
+          <span aria-hidden="true">&#10006;</span> Rechazar
+        </button>
+      </div>
+    </section>
+
+    <!-- ===================== EVENT LOG (SSE STREAM) ===================== -->
+    <section aria-label="Stream de eventos SSE" class="mt-8 bg-panel border border-border rounded-xl overflow-hidden">
+      <button
+        id="toggle-log"
+        type="button"
+        class="w-full flex items-center justify-between px-5 py-3 hover:bg-bg/60 transition text-left"
+        aria-expanded="true"
+        aria-controls="event-log-body"
+      >
+        <div class="flex items-center gap-2">
+          <span aria-hidden="true" class="text-accent font-mono text-xs">&#9654;</span>
+          <span class="font-semibold text-white text-sm">Event log (SSE stream)</span>
+          <span class="text-xs text-muted font-mono" id="event-count">0 events</span>
+        </div>
+        <span class="text-muted text-xs" id="toggle-icon">&#9662;</span>
+      </button>
+      <div id="event-log-body" class="border-t border-border bg-bg/60">
+        <div class="px-5 py-2 flex items-center gap-2 text-xs text-muted font-mono border-b border-border/60">
+          <span class="inline-block w-2 h-2 rounded-full bg-success animate-pulse" aria-hidden="true"></span>
+          <span>GET /api/changes/chg_482/stream &mdash; EventSource</span>
+        </div>
+        <ol id="event-log" class="font-mono text-xs text-slate-300 px-5 py-3 space-y-1 max-h-80 overflow-y-auto" aria-live="polite" aria-relevant="additions">
+          <!-- events injected by JS -->
+        </ol>
+      </div>
+    </section>
+
+    <!-- ===================== FOOTER NOTE ===================== -->
+    <footer class="mt-8 text-xs text-muted">
+      <p>
+        <span class="text-accent font-semibold">Tip:</span>
+        pasa el rat&oacute;n sobre cualquier badge para ver qu&eacute; significa en el contexto de SSE.
+        Este archivo es un mockup est&aacute;tico &mdash; ninguna llamada de red sale del navegador.
+      </p>
+    </footer>
+  </main>
+
+  <!-- ===================== SCRIPT ===================== -->
+  <script>
+  /* ----------------------------------------------------------------------
+   * Streaming preview logic. We don't have a real EventSource; we fake it.
+   *
+   * Each scenario (success / partial-fail) schedules a sequence of:
+   *   op:start   (status -> running, start elapsed counter)
+   *   op:success | op:fail   (status -> success / failed, stop counter)
+   *   op:skipped (only when a prior op failed -> producer_failure rule)
+   * ...and renders each one as a row in the live event log, with the same
+   * payload shape the real SSE backend would emit.
+   * ---------------------------------------------------------------------- */
+  (() => {
+    'use strict';
+
+    const TOTAL_OPS = 4;
+    const PLAN_STATUS = document.getElementById('plan-status-badge');
+    const PROGRESS    = document.getElementById('progress-line');
+    const OPS_LIST    = document.getElementById('ops-list');
+    const LOG         = document.getElementById('event-log');
+    const EVENT_COUNT = document.getElementById('event-count');
+
+    let runningTimers = {};   // index -> intervalId for elapsed counter
+    let state = initState();  // per-op status cache
+    let cancelTokens = 0;     // bump on reset to cancel in-flight scenarios
+
+    function initState() {
+      return Array.from({ length: TOTAL_OPS }, () => ({ status: 'pending', error: null }));
+    }
+
+    /* ---------- helpers ---------- */
+
+    function nowStr() {
+      const d = new Date();
+      const pad = (n, w = 2) => String(n).padStart(w, '0');
+      return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+    }
+
+    function setPlanStatus(label, colorClasses) {
+      PLAN_STATUS.textContent = label;
+      PLAN_STATUS.className = `text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap ${colorClasses}`;
+    }
+
+    function setProgress(done, total = TOTAL_OPS) {
+      PROGRESS.textContent = `Progress: ${done}/${total} ops completed`;
+    }
+
+    function getOpEl(i) {
+      return OPS_LIST.querySelector(`.op-item[data-op-index="${i}"]`);
+    }
+
+    function getBadgeEl(i) {
+      return getOpEl(i).querySelector('.status-badge');
+    }
+
+    function getErrorEl(i) {
+      return getOpEl(i).querySelector('.op-error');
+    }
+
+    function getElapsedEl(i) {
+      return getOpEl(i).querySelector('.op-elapsed');
+    }
+
+    /* ---------- badge styling (mirrors ChangePlan.tsx classNames) ---------- */
+
+    const BADGE_CLASSES = {
+      pending:  ['bg-slate-700', 'text-slate-300'],
+      running:  ['bg-yellow-700', 'text-white', 'pulse-running'],
+      success:  ['bg-green-700',  'text-white'],
+      failed:   ['bg-red-700',    'text-white'],
+      skipped:  ['bg-gray-600',   'text-white'],
+    };
+
+    const TIP_TEXT = {
+      running:  'running = backend est&aacute; ejecutando la operaci&oacute;n N (evento op:start recibido, sin op:success a&uacute;n).',
+      success:  'success = el backend confirm&oacute; op:success; el resultado persisti&oacute; en WP.',
+      skipped:  'skipped = operaci&oacute;n saltada porque una anterior fall&oacute; (producer_failure rule).',
+      failed:   'failed = el backend devolvi&oacute; op:fail con error.code / error.message.',
+      pending:  'pending = la operaci&oacute;n a&uacute;n no se ha enviado al backend.',
+    };
+
+    function applyBadge(i, status, errorMsg) {
+      const badge = getBadgeEl(i);
+      // Reset
+      badge.className = 'status-badge text-xs px-2 py-0.5 rounded font-medium';
+      Object.values(BADGE_CLASSES).flat().forEach((c) => badge.classList.remove(c));
+
+      const classes = BADGE_CLASSES[status] || BADGE_CLASSES.pending;
+      classes.forEach((c) => badge.classList.add(c));
+
+      // Build inner content
+      badge.innerHTML = '';
+      if (status === 'running') {
+        const spinner = document.createElement('span');
+        spinner.className = 'inline-block spin';
+        spinner.setAttribute('aria-hidden', 'true');
+        spinner.innerHTML = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
+        badge.appendChild(spinner);
+        badge.appendChild(document.createTextNode(' ejecutando…'));
+      } else if (status === 'success') {
+        badge.textContent = '✓ ok';
+      } else if (status === 'failed') {
+        badge.textContent = '✗ fail';
+      } else if (status === 'skipped') {
+        badge.textContent = 'skipped';
+      } else {
+        badge.textContent = 'pending';
+      }
+
+      // Tooltip
+      badge.setAttribute('data-tip', '');
+      badge.setAttribute('tabindex', '0');
+      badge.setAttribute(
+        'aria-label',
+        `Operación ${i + 1}: ${status}${errorMsg ? '. ' + errorMsg : ''}`
+      );
+      const tip = document.createElement('span');
+      tip.className = 'tip';
+      tip.innerHTML = TIP_TEXT[status] || TIP_TEXT.pending;
+      badge.appendChild(tip);
+
+      // Error line
+      const errEl = getErrorEl(i);
+      if (status === 'failed' && errorMsg) {
+        errEl.textContent = errorMsg;
+        errEl.classList.remove('hidden');
+      } else {
+        errEl.textContent = '';
+        errEl.classList.add('hidden');
+      }
+
+      state[i].status = status;
+      state[i].error = status === 'failed' ? errorMsg : null;
+
+      // Update progress (success or skipped count toward "completed" — mirrors ChangePlan.tsx)
+      const done = state.filter((s) => s.status === 'success' || s.status === 'skipped').length;
+      setProgress(done);
+    }
+
+    /* ---------- elapsed counter ---------- */
+
+    function startElapsed(i) {
+      stopElapsed(i);
+      const el = getElapsedEl(i);
+      el.classList.remove('hidden');
+      const start = Date.now();
+      runningTimers[i] = setInterval(() => {
+        const s = ((Date.now() - start) / 1000).toFixed(1);
+        el.textContent = `${s}s`;
+      }, 100);
+    }
+
+    function stopElapsed(i) {
+      if (runningTimers[i]) {
+        clearInterval(runningTimers[i]);
+        delete runningTimers[i];
+      }
+      const el = getElapsedEl(i);
+      if (el) {
+        const s = ((Date.now() - parseFloat(el.textContent || '0') * 1000) / 1000).toFixed(1);
+        // freeze current value
+      }
+    }
+
+    /* ---------- SSE event log ---------- */
+
+    function logEvent(eventName, data) {
+      const li = document.createElement('li');
+      li.className = 'event-row';
+      li.innerHTML =
+        `<span class="text-muted">[${nowStr()}]</span> ` +
+        `<span class="text-accent">event: ${eventName}</span> ` +
+        `<span class="text-slate-400">data:</span> ` +
+        `<span class="text-slate-200">${escapeHtml(JSON.stringify(data))}</span>`;
+      LOG.appendChild(li);
+      LOG.scrollTop = LOG.scrollHeight;
+
+      const n = LOG.children.length;
+      EVENT_COUNT.textContent = `${n} event${n === 1 ? '' : 's'}`;
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      }[c]));
+    }
+
+    /* ---------- core: emit a single op:start -> op:success/fail ---------- */
+
+    function emitOp(index, durationMs, failWith) {
+      const token = cancelTokens;
+      const tool = ['create_page', 'use_template', 'replace_image', 'update_widget'][index];
+
+      // op:start
+      applyBadge(index, 'running');
+      startElapsed(index);
+      logEvent('op:start', { tool, index });
+
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          if (token !== cancelTokens) return resolve(); // cancelled by reset
+
+          if (failWith) {
+            // op:fail
+            stopElapsed(index);
+            applyBadge(index, 'failed', failWith.message);
+            logEvent('op:fail', { tool, index, error: { code: failWith.code, message: failWith.message }, duration_ms: durationMs });
+            resolve({ failed: true, tool, index });
+          } else {
+            // op:success
+            stopElapsed(index);
+            applyBadge(index, 'success');
+            logEvent('op:success', { tool, index, duration_ms: durationMs });
+            resolve({ success: true, tool, index });
+          }
+        }, durationMs);
+      });
+    }
+
+    /* ---------- scenarios ---------- */
+
+    function clearLog() {
+      LOG.innerHTML = '';
+      EVENT_COUNT.textContent = '0 events';
+    }
+
+    function reset() {
+      cancelTokens++;
+      Object.keys(runningTimers).forEach((k) => clearInterval(runningTimers[k]));
+      runningTimers = {};
+      state = initState();
+      state.forEach((_, i) => {
+        applyBadge(i, 'pending');
+        const el = getElapsedEl(i);
+        el.classList.add('hidden');
+        el.textContent = '0.0s';
+      });
+      setPlanStatus('Pendiente de aprobación', 'bg-slate-700 text-slate-300');
+      setProgress(0);
+      clearLog();
+    }
+
+    async function runSuccessScenario() {
+      reset();
+      setPlanStatus('Ejecutando…', 'bg-yellow-700 text-white');
+      // realistic per-op durations 300-700ms
+      const durs = [420, 610, 540, 380];
+      for (let i = 0; i < TOTAL_OPS; i++) {
+        await emitOp(i, durs[i]);
+      }
+      if (cancelTokens !== /* latest */ null) return;
+      setPlanStatus('✅ Completado', 'bg-green-700 text-white');
+    }
+
+    async function runFailScenario() {
+      reset();
+      setPlanStatus('Ejecutando…', 'bg-yellow-700 text-white');
+      const durs = [380, 520];
+
+      // ops 1, 2 -> success
+      for (let i = 0; i < 2; i++) {
+        await emitOp(i, durs[i]);
+      }
+
+      // op 3 -> fail with realistic WP_Error shape
+      const err = {
+        code: 'NOT_A_WIDGET',
+        message: 'WP_Error: HTTP 422 — ELEMENT_NOT_FOUND — element "7a94c7f" no es un widget v&aacute;lido (replace_image requiere widget:image)',
+      };
+      await emitOp(2, 290, err);
+
+      // op 4 -> skipped (producer_failure rule)
+      const tool = 'update_widget';
+      applyBadge(3, 'skipped');
+      logEvent('op:skipped', { tool, index: 3, reason: 'producer_failure' });
+
+      setPlanStatus('❌ Falló', 'bg-red-700 text-white');
+    }
+
+    /* ---------- event listeners ---------- */
+
+    document.getElementById('btn-reset').addEventListener('click', reset);
+    document.getElementById('btn-success').addEventListener('click', runSuccessScenario);
+    document.getElementById('btn-fail').addEventListener('click', runFailScenario);
+
+    // The in-card buttons map to the same scenarios for realism.
+    document.getElementById('btn-approve').addEventListener('click', runSuccessScenario);
+    document.getElementById('btn-execute-all').addEventListener('click', runSuccessScenario);
+    document.getElementById('btn-reject').addEventListener('click', () => {
+      reset();
+      setPlanStatus('Rechazado', 'bg-slate-700 text-slate-300');
+    });
+
+    // Collapse/expand the event log
+    const toggleBtn = document.getElementById('toggle-log');
+    const toggleBody = document.getElementById('event-log-body');
+    const toggleIcon = document.getElementById('toggle-icon');
+    toggleBtn.addEventListener('click', () => {
+      const open = !toggleBody.classList.contains('hidden');
+      toggleBody.classList.toggle('hidden');
+      toggleBtn.setAttribute('aria-expanded', String(!open));
+      toggleIcon.innerHTML = open ? '&#9656;' : '&#9662;';
+    });
+
+    // Initial state
+    reset();
+    // Seed log with a synthetic "ready" event so the panel isn't empty
+    logEvent('ready', { change_id: 'chg_482', ops: TOTAL_OPS, ts: nowStr() });
+  })();
+  </script>
+</body>
+</html>
